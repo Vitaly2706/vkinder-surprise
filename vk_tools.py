@@ -49,11 +49,17 @@ class VkTools():
         sex = 1 if params['sex'] == 2 else 2
         city = params['city']
         curent_year = datetime.now().year
-        user_year = int(params['bdate'].split('.')[2])
+        user_year = self.get_user_year(params['bdate'])
         age = curent_year - user_year
         age_from = age - 5
         age_to = age + 5        
         return self.api.method('users.search', {'count': 20, 'offset': offset, 'age_from': age_from, 'age_to': age_to, 'sex': sex, 'city': city, 'status': 6, 'is_closed': False})['items']
+
+    def get_user_year(self, birthday):
+        try:
+            return int(birthday.split('.')[2])
+        except IndexError:
+            return DEFAULT_USER_YEAR
 
     def get_user_profile_photos(self, user_id):
         res = []
