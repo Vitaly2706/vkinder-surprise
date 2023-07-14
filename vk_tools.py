@@ -4,8 +4,9 @@ import vk_api
 
 from config import acces_token
 from repository import ViewedProfilesRepository
+from user_profile import UserProfile
 
-from constants import *
+from constants import MAX_USER_PROFILES_TO_SHOW, MAX_VK_USERS_SEARCH_ATTEMPS, DEFAULT_USER_YEAR
 
 class VkTools():
 
@@ -16,28 +17,28 @@ class VkTools():
     def get_user_profile(self, user_id):
         try:
             user, = self.api.method('users.get', {'user_id': user_id, 'fields': 'city,bdate,sex,relation,home_town'})
-            return { 'name': self.get_property(user, 'first_name', "") + ' ' + self.get_property(user, 'last_name', ""),
-                    'id':  user['id'],
-                    'bdate': self.get_property(user, 'bdate', '01.01.1990'),
-                    'home_town': self.get_property(user, 'home_town'),
-                    'sex': self.get_property(user, 'sex', 1),
-                    'city': user['city']['id'] if 'city' in user else None
-                }
+            return UserProfile(
+                user_id,
+                self.get_property(user, 'first_name', "") + ' ' + self.get_property(user, 'last_name', ""),
+                self.get_property(user, 'sex'),
+                self.get_user_year(user),
+                user['city']['id'] if 'city' in user else None
+            )
         except KeyError:
             return None
    
     def get_property(self, object, propertyName, defaultValue = None):
         return object[propertyName] if propertyName in object else defaultValue
 
-    def search_user_profiles(self, params):
+    def search_user_profiles(self, user_profile: UserProfile):
         res = []
         try:
             offset = 0
             search_attempts = 0
             while len(res) < MAX_USER_PROFILES_TO_SHOW and search_attempts < MAX_VK_USERS_SEARCH_ATTEMPS:
-                profiles = self.search_more_user_profiles(params, offset)
+                profiles = self.search_more_user_profiles(user_profile, offset)
                 for profile in profiles:
-                    if profile['is_closed'] == False and not self.repository.was_profile_viewed(params['id'], profile['id']):
+                    if profile['is_closed'] == False and not self.repository.was_profile_viewed(user_profile.id, profile['id']):
                         res.append({'id' : profile['id'], 'name': profile['first_name'] + ' ' + profile['last_name']})        
                 offset += 20
                 search_attempts += 1
@@ -45,21 +46,23 @@ class VkTools():
             pass
         return res
 
-    def search_more_user_profiles(self, params, offset):
-        sex = 1 if params['sex'] == 2 else 2
-        city = params['city']
+    def search_more_user_profiles(self, user_profile: UserProfile, offset):
+        sex = 1 if user_profile.sex == 2 else 2
         curent_year = datetime.now().year
-        user_year = self.get_user_year(params['bdate'])
-        age = curent_year - user_year
+        age = curent_year - user_profile.birth_year
         age_from = age - 5
         age_to = age + 5        
-        return self.api.method('users.search', {'count': 20, 'offset': offset, 'age_from': age_from, 'age_to': age_to, 'sex': sex, 'city': city, 'status': 6, 'is_closed': False})['items']
+        return self.api.method('users.search', {'count': 20, 'offset': offset, 'age_from': age_from, 'age_to': age_to, 'sex': sex,
+         'city': user_profile.city, 'hometown': user_profile.hometown, 'status': 6, 'is_closed': False})['items']
 
-    def get_user_year(self, birthday):
+    def get_user_year(self, params):
+        birthday = self.get_property(params, 'bdate')
+        if birthday == None:
+            return None
         try:
             return int(birthday.split('.')[2])
         except IndexError:
-            return DEFAULT_USER_YEAR
+            return None        
 
     def get_user_profile_photos(self, user_id):
         res = []
